@@ -34,10 +34,11 @@ function em_iterate(name, s, fit, ph_structure, method, max_iter, timeout,
     save_progress(name, s, fit, start)
 
     ll = 0
-
+    prevll = 1000
     numPlots = 0
     iter = 1
-    while iter < max_iter
+    while (iter < max_iter && abs(prevll - ll) > 10^(-3))
+        prevll = loglikelihoodcensored(s, fit)
         ##  The expectation step!
         Bs = zeros(p); Zs = zeros(p); Ns = zeros(p, p+1)
 
@@ -51,15 +52,15 @@ function em_iterate(name, s, fit, ph_structure, method, max_iter, timeout,
             end
         end
 
-        if length(s.cens) > 0 || length(s.int) > 0
-            if method == :unif
-                e_step_censored_uniform!(s, fit, Bs, Zs, Ns)
-            elseif method == :ode
-                e_step_censored_ode!(s, fit, Bs, Zs, Ns)
-            else
-                error("Method should be :unif or :ode")
-            end
-        end
+        # if length(s.cens) > 0 || length(s.int) > 0
+        #     if method == :unif
+        #         e_step_censored_uniform!(s, fit, Bs, Zs, Ns)
+        #     elseif method == :ode
+        #         e_step_censored_ode!(s, fit, Bs, Zs, Ns)
+        #     else
+        #         error("Method should be :unif or :ode")
+        #     end
+        # end
 
         ## The maximisation step!
         π_next = max.(Bs ./ sumOfWeights, 0)
@@ -97,8 +98,8 @@ function em_iterate(name, s, fit, ph_structure, method, max_iter, timeout,
             end
             break
         else
+            ll = loglikelihoodcensored(s, fit)
             if verbose
-                ll = loglikelihoodcensored(s, fit)
                 seconds = round(remaining, Dates.Second)
                 duration = Dates.canonicalize(Dates.CompoundPeriod(seconds))
                 println("Iteration: $iter/$max_iter\t",
