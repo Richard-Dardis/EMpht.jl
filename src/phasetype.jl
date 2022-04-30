@@ -3,8 +3,8 @@ using Distributions
 using Statistics: cor, cov, median, std, quantile
 
 import Base: minimum, maximum
-import Distributions: cdf, insupport, logpdf, pdf
-import Statistics: mean
+import Distributions: cdf, insupport, logpdf, pdf, rand
+import Statistics: mean, var
 
 macro check_args(D, cond)
     quote
@@ -48,6 +48,46 @@ logpdf(d::PhaseType, x::Real) = log(pdf(d, x))
 cdf(d::PhaseType, x::Real) = 1 - transpose(d.π) * exp(d.T * x) * ones(d.p)
 
 mean(d::PhaseType) = -transpose(d.π) * inv(d.T) * ones(d.p)
+
+# My new functions
+PHmoment(d::PhaseType, n::Int64) = factorial(n) * transpose(d.π) * (-inv(d.T))^n * ones(d.p)
+var(d::PhaseType) = PHmoment(d,2) - (mean(d))^2
+
+# Random samples
+function rand(rng::AbstractRNG, d::PhaseType)
+    # auxilary variables
+    a = d.π
+    A = d.T
+    N = length(a)
+
+    cummInitial = cumsum(a, dims=1)
+    sojourn = -1.0./diag(A)
+    nextpr = diagm(sojourn) * A
+    nextpr = nextpr - diagm(diag(nextpr))
+    nextpr = hcat(nextpr, 1.0 .- sum(nextpr,dims=2))
+    nextpr = cumsum(nextpr, dims=2)
+
+    time = 0
+
+    # draw initial distribution
+    r =  rand()
+    state = 1
+    while cummInitial[state] <= r
+        state += 1
+    end
+
+    # play state transitions
+    while state <= N
+        time += - log(rand()) * sojourn[state]
+        r = rand()
+        nstate = 1
+        while nextpr[state, nstate] <= r
+            nstate += 1
+        end
+        state = nstate
+    end
+    return time
+end
 
 iscoxian(d::PhaseType) = all(isapprox.(d.T[diagm(0 => ones(d.p),
     1 => ones(d.p-1)) .< 1], 0))

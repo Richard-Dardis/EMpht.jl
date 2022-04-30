@@ -34,10 +34,11 @@ function em_iterate(name, s, fit, ph_structure, method, max_iter, timeout,
     save_progress(name, s, fit, start)
 
     ll = 0
-    prevll = 1000
     numPlots = 0
     iter = 1
-    while (iter < max_iter && abs(prevll - ll) > 10^(-3))
+    ϵ=1e-2
+    currdiff = 1000
+    while (iter <= max_iter)
         prevll = loglikelihoodcensored(s, fit)
         ##  The expectation step!
         Bs = zeros(p); Zs = zeros(p); Ns = zeros(p, p+1)
@@ -52,15 +53,15 @@ function em_iterate(name, s, fit, ph_structure, method, max_iter, timeout,
             end
         end
 
-        # if length(s.cens) > 0 || length(s.int) > 0
-        #     if method == :unif
-        #         e_step_censored_uniform!(s, fit, Bs, Zs, Ns)
-        #     elseif method == :ode
-        #         e_step_censored_ode!(s, fit, Bs, Zs, Ns)
-        #     else
-        #         error("Method should be :unif or :ode")
-        #     end
-        # end
+        if length(s.cens) > 0 || length(s.int) > 0
+            if method == :unif
+                e_step_censored_uniform!(s, fit, Bs, Zs, Ns)
+            elseif method == :ode
+                e_step_censored_ode!(s, fit, Bs, Zs, Ns)
+            else
+                error("Method should be :unif or :ode")
+            end
+        end
 
         ## The maximisation step!
         π_next = max.(Bs ./ sumOfWeights, 0)
@@ -87,27 +88,38 @@ function em_iterate(name, s, fit, ph_structure, method, max_iter, timeout,
             fit = sort_into_canonical_form(fit)
         end
 
+        ll = loglikelihoodcensored(s, fit)
+        currdiff = abs(ll - prevll)
+
         remaining = endTime - now()
-        if remaining.value < 0 || iter >= max_iter
+        if (remaining.value < 0 && currdiff < ϵ) || iter >= max_iter
             ll = save_progress(name, s, fit, start)
             seconds = round(now() - start, Dates.Second)
             duration = Dates.canonicalize(Dates.CompoundPeriod(seconds))
-            if verbose
-                println("Quitting after $duration/$iter iterations with ll = ",
-                    round(Float64(ll), sigdigits=5))
-            end
+            println("TESTPRINT")
+            println("Quitting after $duration/$iter iterations with LL = ",
+                    round(Float64(ll), sigdigits=7), " and ΔLL = ", round(Float64(currdiff), sigdigits=4))
+
+            break
+        elseif currdiff < 1e-9 #early terminiation becaues no progres is made
+            ll = save_progress(name, s, fit, start)
+            seconds = round(now() - start, Dates.Second)
+            duration = Dates.canonicalize(Dates.CompoundPeriod(seconds))
+            println("TESTPRINT")
+            println("LL change between iterations < 1e-9, so exit early. Quitting after $duration/$iter iterations with LL = ",
+                    round(Float64(ll), sigdigits=7), " and ΔLL = ", round(Float64(currdiff), sigdigits=4))
+
             break
         else
-            ll = loglikelihoodcensored(s, fit)
             if verbose
                 seconds = round(remaining, Dates.Second)
                 duration = Dates.canonicalize(Dates.CompoundPeriod(seconds))
                 println("Iteration: $iter/$max_iter\t",
                     "Timeout in $duration\t",
-                    "Loglikelihood: ", round(Float64(ll), sigdigits=5))
+                    "Loglikelihood: ", round(Float64(ll), sigdigits=7),
+                    "\tΔLL: ", round(Float64(currdiff), sigdigits=4))
             end
         end
-
         iter += 1
     end
 
